@@ -861,12 +861,22 @@ struct SettingView: View {
                         Label("音量", systemImage: "speaker.wave.2")
                         Slider(value: Binding(get: { player.volume }, set: { player.volume = $0 }), in: 0...1)
                     }
+                    Toggle("实时字幕（实验）", isOn: Binding(
+                        get: { store.liveCaptionEnabled },
+                        set: { value in
+                            store.liveCaptionEnabled = value
+                            player.liveCaptionEnabled = value
+                        }
+                    ))
+                    Text("使用本机 Apple Speech 识别正在播放的内容，会增加耗电；识别结果仅供参考。")
+                        .font(.caption2)
+                        .appSecondary()
                     Button { player.stop() } label: { Label("停止播放", systemImage: "stop.circle") }
-                                }
+                }
                 .appSectionHeader("播放")
 
                 Section {
-                    AppInfoRow(title: "版本", value: "1.0.0 (iOS14 兼容)")
+                    AppInfoRow(title: "版本", value: "1.0.3 (Apple Speech 字幕验证)")
                     AppInfoRow(title: "当前电台数", value: "\(catalog.stations.count)")
                     AppInfoRow(title: "电台来源", value: "多源合并 · 内置兜底")
                     Button { showResetConfirm = true } label: {
@@ -1156,7 +1166,9 @@ struct FullPlayerView: View {
                     .padding(.horizontal, 32)
                 Spacer(minLength: 14)
                 stationInfo
-                Spacer(minLength: 18)
+                Spacer(minLength: 10)
+                captionView
+                Spacer(minLength: 10)
                 volumeRow
                 Spacer(minLength: 18)
                 transportRow
@@ -1313,6 +1325,34 @@ struct FullPlayerView: View {
         }
     }
 
+    private var captionView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !player.captionStatus.isEmpty {
+                Text(player.captionStatus)
+                    .font(.caption2)
+                    .appTertiary()
+            }
+            if !player.captionPartial.isEmpty {
+                Text(player.captionPartial)
+                    .font(.footnote)
+                    .appPrimary()
+                    .lineLimit(3)
+            }
+            ForEach(player.captionLines.suffix(3)) { line in
+                Text(line.text)
+                    .font(.caption)
+                    .appSecondary()
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(tint.opacity(0.12))
+        .cornerRadius(16)
+        .padding(.horizontal, 32)
+    }
+
     private var queueInfo: some View {
         Text("\(currentIndex + 1) / \(queueCount) · \(catalog.selectedSourceTitle())")
             .font(.caption2)
@@ -1338,6 +1378,7 @@ struct FMRadioApp: App {
         _player = StateObject(wrappedValue: player)
         _store = StateObject(wrappedValue: store)
         _catalog = StateObject(wrappedValue: catalog)
+        player.liveCaptionEnabled = store.liveCaptionEnabled
         if #available(iOS 14.0, *) {
             CarPlayController.shared.configure(player: player, store: store, catalog: catalog)
         }

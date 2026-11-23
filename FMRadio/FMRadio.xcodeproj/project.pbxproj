@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FMRAP10000000000000000001 /* LiveCaptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FMRAP10000000000000000002; };
+		FMRAP10000000000000000003 /* StreamAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FMRAP10000000000000000004; };
 		BB0000000000000000000001 /* FMRadioWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002; };
 		77829ABD01EE91062C730366 /* StationData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1676CF35DB9E6DEFCC96974D; };
 		A1B2C3D4E5F60718293A4B5D /* CatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C; };
@@ -38,6 +40,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FMRAP10000000000000000002 /* LiveCaptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCaptionEngine.swift; sourceTree = "<group>"; };
+		FMRAP10000000000000000004 /* StreamAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamAudioEngine.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* FMRadioWidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FMRadioWidgetIntents.swift; sourceTree = "<group>"; };
 		1676CF35DB9E6DEFCC96974D /* StationData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationData.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5C /* CatalogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogStore.swift; sourceTree = "<group>"; };
@@ -108,6 +112,8 @@
 				B5EED8A2ED0BAE0359DC140A,
 				112233445566778899AABB0E,
 				C0AA00000000000000000001,
+				FMRAP10000000000000000002,
+				FMRAP10000000000000000004,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -239,6 +245,8 @@
 				C0AA00000000000000000002,
 				112233445566778899AABB13,
 				112233445566778899AABB12,
+				FMRAP10000000000000000001,
+				FMRAP10000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

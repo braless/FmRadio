@@ -16,6 +16,7 @@ final class Store: ObservableObject {
     }
     @AppStorage("APP_THEME_COLOR") var themeColor: String = "blue"
     @AppStorage("APP_UI_COLOR_CHANGED") var colorChanged: Bool = false
+    @AppStorage("APP_LIVE_CAPTION_ENABLED") var liveCaptionEnabled: Bool = false
 
     private let defaults = UserDefaults.standard
 

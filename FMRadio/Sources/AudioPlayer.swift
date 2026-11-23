@@ -11,7 +11,34 @@ final class AudioPlayer: ObservableObject {
     @Published var isPlaying = false
     @Published var isBuffering = false
     @Published var errorMessage: String?
-    @Published var volume: Float = 1.0 { didSet { player?.volume = volume } }
+    @Published var volume: Float = 1.0 {
+        didSet { player?.volume = volume; streamEngine?.volume = volume }
+    }
+    @Published var captionLines: [CaptionLine] = []
+    @Published var captionPartial: String = ""
+    @Published var captionStatus: String = ""
+
+    var liveCaptionEnabled = false {
+        didSet {
+            guard oldValue != liveCaptionEnabled else { return }
+            if liveCaptionEnabled {
+                if isPlaying, let station = current, let url = URL(string: station.url) {
+                    startCaptionFeed(station: station, url: url)
+                }
+            } else {
+                caption.stop()
+                streamEngine?.stop()
+                streamEngine = nil
+                captionLines.removeAll()
+                captionPartial = ""
+                captionStatus = ""
+                publishCaptionState()
+            }
+        }
+    }
+
+    private let caption = LiveCaptionEngine()
+    private var streamEngine: StreamAudioEngine?
 
     /// 全量电台目录，用于上一台/下一台切换；由 ContentView 在目录加载后注入。
     var playlist: [Station] = []
@@ -24,6 +51,12 @@ final class AudioPlayer: ObservableObject {
     init() {
         configureSession()
         setupRemoteCommands()
+        caption.onUpdate = { [weak self] lines, partial, status in
+            guard let self = self else { return }
+            self.captionLines = lines
+            self.captionPartial = partial
+            self.captionStatus = status
+        }
     }
 
     private func configureSession() {
@@ -65,14 +98,22 @@ final class AudioPlayer: ObservableObject {
 
     func play(_ station: Station) {
         if current?.id == station.id { toggle(); return }
-        stopObservers()
+        stopEngines(clearNowPlaying: false)
         current = station
         errorMessage = nil
+        storeStation(station)
         guard let url = URL(string: station.url) else {
             errorMessage = "无效的电台地址"; return
         }
-        // 官方电台流全部为 http（mp3 / m3u8），Info.plist 已允许明文 HTTP。
-        // m3u8 内部切片为相对路径，同样走 http，不会出现证书校验问题。
+        // 声音始终由 AVPlayer 负责；字幕是旁路，不能影响播放。
+        startAVPlayer(url: url)
+        if liveCaptionEnabled {
+            startCaptionFeed(station: station, url: url)
+        }
+        updateNowPlaying()
+    }
+
+    private func startAVPlayer(url: URL) {
         let item = AVPlayerItem(url: url)
         statusObserver = item.observe(\.status) { [weak self] item, _ in
             DispatchQueue.main.async { [weak self] in
@@ -85,7 +126,8 @@ final class AudioPlayer: ObservableObject {
                 case .failed:
                     self.isPlaying = false
                     self.errorMessage = item.error?.localizedDescription ?? "播放失败"
-                default: break
+                case .unknown: break
+                @unknown default: break
                 }
             }
         }
@@ -96,7 +138,39 @@ final class AudioPlayer: ObservableObject {
         }
         isBuffering = true
         player?.play()
-        updateNowPlaying()
+    }
+
+    private func startCaptionFeed(station: Station, url: URL) {
+        caption.reset()
+        caption.start()
+        let engine = StreamAudioEngine()
+        engine.volume = volume
+        engine.onStateChange = { [weak self] _, message in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.current?.id == station.id else { return }
+                if let message = message, !message.isEmpty {
+                    self.captionStatus = message
+                    self.publishCaptionState()
+                }
+            }
+        }
+        engine.onPCM = { [weak self] buffer in
+            self?.caption.feed(buffer)
+        }
+        engine.onFallback = { [weak self] in
+            guard let self = self else { return }
+            self.captionStatus = "当前电台暂不支持实时字幕，播放不受影响"
+            self.publishCaptionState()
+        }
+        streamEngine = engine
+        engine.play(url: url)
+    }
+
+    private func publishCaptionState() {
+        captionLines = captionLines
+        captionPartial = captionPartial
+        captionStatus = captionStatus
+        objectWillChange.send()
     }
 
     func toggle() {
@@ -127,29 +201,59 @@ final class AudioPlayer: ObservableObject {
         player.play()
         isPlaying = true
         updateNowPlaying()
+
+        if liveCaptionEnabled, let station = current, let url = URL(string: station.url),
+           streamEngine == nil {
+            startCaptionFeed(station: station, url: url)
+        }
     }
 
     func pause() {
         player?.pause()
+        streamEngine?.pause()
+        streamEngine = nil
+        caption.stop()
         isPlaying = false
         updateNowPlaying()
     }
 
     func stop() {
-        player?.pause()
-        player = nil
-        current = nil
-        isPlaying = false
-        isBuffering = false
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        stopEngines(clearNowPlaying: true)
     }
 
-    private func stopObservers() {
+    private func stopEngines(clearNowPlaying: Bool) {
         statusObserver?.invalidate(); statusObserver = nil
         rateObserver?.invalidate(); rateObserver = nil
         timeControlObserver?.invalidate(); timeControlObserver = nil
         player?.pause()
         player = nil
+        caption.stop()
+        streamEngine?.stop()
+        streamEngine = nil
+        if clearNowPlaying {
+            current = nil
+            isPlaying = false
+            isBuffering = false
+            captionLines.removeAll()
+            captionPartial = ""
+            captionStatus = ""
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        } else {
+            isPlaying = false
+            isBuffering = false
+        }
+    }
+
+    private func storeStation(_ station: Station) {
+        // Store is injected by FMRadioApp; UserDefaults keeps this independent.
+        let defaults = UserDefaults.standard
+        var ids = defaults.stringArray(forKey: "RADIO_RECENT") ?? []
+        ids.removeAll { $0 == station.id }
+        ids.insert(station.id, at: 0)
+        if ids.count > 30 { ids = Array(ids.prefix(30)) }
+        defaults.set(ids, forKey: "RADIO_RECENT")
+        defaults.set(station.id, forKey: "LAST_RADIO_STORE")
+        NotificationCenter.default.post(name: Notification.Name("FMRadioDidTouchStation"), object: station.id)
     }
 
     private func updateNowPlaying() {
