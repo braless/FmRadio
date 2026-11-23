@@ -1,0 +1,201 @@
+import Foundation
+import AVFoundation
+import MediaPlayer
+import Combine
+
+/// Playback engine. Mirrors the original `ZSVRadioPlayer` responsibilities:
+/// AVPlayer streaming, AVAudioSession background audio, now-playing info and
+/// remote-control (lock screen / headphone) play-pause handling.
+final class AudioPlayer: ObservableObject {
+    @Published var current: Station?
+    @Published var isPlaying = false
+    @Published var isBuffering = false
+    @Published var errorMessage: String?
+    @Published var volume: Float = 1.0 { didSet { player?.volume = volume } }
+
+    /// 全量电台目录，用于上一台/下一台切换；由 ContentView 在目录加载后注入。
+    var playlist: [Station] = []
+
+    private var player: AVPlayer?
+    private var statusObserver: NSKeyValueObservation?
+    private var timeControlObserver: NSKeyValueObservation?
+    private var rateObserver: NSKeyValueObservation?
+
+    init() {
+        configureSession()
+        setupRemoteCommands()
+    }
+
+    private func configureSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true, options: [])
+        } catch {
+            errorMessage = "音频会话配置失败: \(error.localizedDescription)"
+        }
+    }
+
+    private func setupRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            self?.play(); return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            self?.pause(); return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            if self.isPlaying { self.pause() } else { self.play() }
+            return .success
+        }
+        center.nextTrackCommand.isEnabled = true
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            DispatchQueue.main.async { [weak self] in self?.next() }
+            return .success
+        }
+        center.previousTrackCommand.isEnabled = true
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            DispatchQueue.main.async { [weak self] in self?.previous() }
+            return .success
+        }
+    }
+
+    func play(_ station: Station) {
+        if current?.id == station.id { toggle(); return }
+        stopObservers()
+        current = station
+        errorMessage = nil
+        guard let url = URL(string: station.url) else {
+            errorMessage = "无效的电台地址"; return
+        }
+        // 官方电台流全部为 http（mp3 / m3u8），Info.plist 已允许明文 HTTP。
+        // m3u8 内部切片为相对路径，同样走 http，不会出现证书校验问题。
+        let item = AVPlayerItem(url: url)
+        statusObserver = item.observe(\.status) { [weak self] item, _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.isBuffering = false
+                switch item.status {
+                case .readyToPlay:
+                    self.isPlaying = true
+                    self.updateNowPlaying()
+                case .failed:
+                    self.isPlaying = false
+                    self.errorMessage = item.error?.localizedDescription ?? "播放失败"
+                default: break
+                }
+            }
+        }
+        player = AVPlayer(playerItem: item)
+        player?.volume = volume
+        rateObserver = player?.observe(\.rate) { [weak self] p, _ in
+            DispatchQueue.main.async { [weak self] in self?.isPlaying = p.rate > 0 }
+        }
+        isBuffering = true
+        player?.play()
+        updateNowPlaying()
+    }
+
+    func toggle() {
+        if isPlaying { pause() } else { play() }
+    }
+
+    /// 切换下一台：没有显式目录时按当前台在 playlist 中的位置顺序切换。
+    func next() {
+        guard !playlist.isEmpty else { return }
+        let idx = playlist.firstIndex { $0.id == current?.id } ?? -1
+        let next = playlist[(idx + 1) % playlist.count]
+        play(next)
+    }
+
+    /// 切换上一台：没有显式目录时回到最后一台。
+    func previous() {
+        guard !playlist.isEmpty else { return }
+        let idx = playlist.firstIndex { $0.id == current?.id } ?? -1
+        let prevIndex = idx <= 0 ? playlist.count - 1 : idx - 1
+        play(playlist[prevIndex])
+    }
+
+    func play() {
+        guard let player = player else {
+            if let s = current { play(s) }
+            return
+        }
+        player.play()
+        isPlaying = true
+        updateNowPlaying()
+    }
+
+    func pause() {
+        player?.pause()
+        isPlaying = false
+        updateNowPlaying()
+    }
+
+    func stop() {
+        player?.pause()
+        player = nil
+        current = nil
+        isPlaying = false
+        isBuffering = false
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    private func stopObservers() {
+        statusObserver?.invalidate(); statusObserver = nil
+        rateObserver?.invalidate(); rateObserver = nil
+        timeControlObserver?.invalidate(); timeControlObserver = nil
+        player?.pause()
+        player = nil
+    }
+
+    private func updateNowPlaying() {
+        guard let s = current else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return
+        }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: s.name,
+            MPMediaItemPropertyArtist: s.desc,
+            MPMediaItemPropertyAlbumTitle: s.region,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: 2, // audio
+            MPNowPlayingInfoPropertyPlaybackQueueIndex: playlist.firstIndex { $0.id == s.id } ?? 0,
+            MPNowPlayingInfoPropertyPlaybackQueueCount: max(playlist.count, 1)
+        ]
+        if let art = Self.artwork(for: s) ?? UIImage(named: "radio") {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: art.size) { _ in art }
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        loadRemoteArtwork(for: s)
+    }
+
+    private static let artworkCache = NSCache<NSString, UIImage>()
+
+    private static func artwork(for station: Station) -> UIImage? {
+        guard let value = station.img_url, !value.isEmpty else { return nil }
+        return artworkCache.object(forKey: value as NSString)
+    }
+
+    private func normalizedArtworkURL(_ value: String) -> URL? {
+        if let url = URL(string: value), url.scheme != nil { return url }
+        if let url = URL(string: "https://" + value), url.host != nil { return url }
+        return URL(string: "http://" + value)
+    }
+
+    private func loadRemoteArtwork(for station: Station) {
+        guard let value = station.img_url, !value.isEmpty,
+              Self.artwork(for: station) == nil,
+              let url = normalizedArtworkURL(value) else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data = data, let image = UIImage(data: data) else { return }
+            Self.artworkCache.setObject(image, forKey: value as NSString)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.current?.id == station.id else { return }
+                self.updateNowPlaying()
+            }
+        }.resume()
+    }
+}

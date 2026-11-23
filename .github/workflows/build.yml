@@ -1,0 +1,108 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    env:
+      SCHEME: FMRadio
+      PROJECT: FMRadio/FMRadio.xcodeproj
+      CONFIGURATION: Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Read app version
+        run: |
+          set -euo pipefail
+          VERSION="$(plutil -extract CFBundleShortVersionString raw -o - FMRadio/Info.plist)"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "IPA_NAME=FmRadio-${VERSION}.ipa" >> "$GITHUB_ENV"
+
+      - name: Clean derived data
+        run: rm -rf "${{ runner.temp }}/FMRadioDerived"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "${{ runner.temp }}/FMRadioDerived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            SWIFT_VERSION=5.0 \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="${{ runner.temp }}/FMRadioDerived/Build/Products/Release-iphoneos/FMRadio.app"
+          test -d "$APP"
+          mkdir -p Payload
+          rm -rf Payload/FMRadio.app
+          cp -R "$APP" Payload/FMRadio.app
+          find Payload/FMRadio.app/Frameworks -maxdepth 1 -name '*.dylib' -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            codesign --force --sign - --timestamp=none "$f"
+          done
+          if [ -d Payload/FMRadio.app/PlugIns/FMRadioWidget.appex ]; then
+            codesign --force --sign - \
+              --entitlements FMRadio/Widget/FMRadioWidget.entitlements \
+              --timestamp=none \
+              Payload/FMRadio.app/PlugIns/FMRadioWidget.appex
+          fi
+          codesign --force --deep --sign - \
+            --entitlements FMRadio/FMRadio.entitlements \
+            --timestamp=none \
+            Payload/FMRadio.app
+          ditto -c -k --sequesterRsrc --keepParent Payload "$IPA_NAME"
+          shasum -a 256 "$IPA_NAME"
+
+      - name: Verify artifact
+        run: |
+          set -euo pipefail
+          test -s "$IPA_NAME"
+          unzip -tq "$IPA_NAME"
+          codesign -dv --verbose=4 Payload/FMRadio.app 2>&1
+          test -d Payload/FMRadio.app/PlugIns/FMRadioWidget.appex
+          codesign -dv --verbose=4 Payload/FMRadio.app/PlugIns/FMRadioWidget.appex 2>&1
+          plutil -extract CFBundleIdentifier raw -o - Payload/FMRadio.app/Info.plist
+          plutil -extract CFBundleShortVersionString raw -o - Payload/FMRadio.app/Info.plist
+          plutil -extract MinimumOSVersion raw -o - Payload/FMRadio.app/Info.plist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FmRadio-ipa
+          path: ${{ env.IPA_NAME }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.IPA_NAME }}
+          generate_release_notes: true
