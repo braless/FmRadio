@@ -295,8 +295,16 @@ struct ContentView: View {
         }
         .appTint(Theme.tint(store.themeColor))
         .background(WidgetBridgeView())
-        .onAppear { player.playlist = catalog.visibleStations }
-        .onReceive(catalog.$visibleStations) { stations in player.playlist = stations }
+        .onAppear {
+            CarPlayController.shared.configure(player: player, store: store, catalog: catalog)
+            player.playlist = catalog.visibleStations
+        }
+        .onReceive(catalog.$visibleStations) { stations in
+            player.playlist = stations
+            CarPlayController.shared.refresh()
+        }
+        .onReceive(store.objectWillChange) { _ in CarPlayController.shared.refresh() }
+        .onReceive(player.objectWillChange) { _ in CarPlayController.shared.refresh() }
         .overlay(
             Group {
                 if tab == .play {
@@ -1319,9 +1327,22 @@ struct FullPlayerView: View {
 // MARK: - App entry
 @main
 struct FMRadioApp: App {
-    @StateObject private var player = AudioPlayer()
-    @StateObject private var store = Store()
-    @StateObject private var catalog = CatalogStore()
+    @StateObject private var player: AudioPlayer
+    @StateObject private var store: Store
+    @StateObject private var catalog: CatalogStore
+
+    init() {
+        let player = AudioPlayer()
+        let store = Store()
+        let catalog = CatalogStore()
+        _player = StateObject(wrappedValue: player)
+        _store = StateObject(wrappedValue: store)
+        _catalog = StateObject(wrappedValue: catalog)
+        if #available(iOS 14.0, *) {
+            CarPlayController.shared.configure(player: player, store: store, catalog: catalog)
+        }
+    }
+
     var body: some Scene {
         WindowGroup { ContentView().environmentObject(player).environmentObject(store).environmentObject(catalog) }
     }

@@ -15,6 +15,7 @@
 		CC17519DC9EA15D8D8A1F455 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75955F20D14F7218718480F3; };
 		C6A5AA1937C362EFE96D3E28 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5EED8A2ED0BAE0359DC140A; };
 		112233445566778899AABB13 /* WidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112233445566778899AABB0E; };
+		C0AA00000000000000000002 /* CarPlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0AA00000000000000000001; };
 		112233445566778899AABB12 /* WidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112233445566778899AABB0B; };
 		469E2738D8687D2DF3EB38AE /* radio.png in Resources */ = {isa = PBXBuildFile; fileRef = 8DDA66B027640A2F0A342679; };
 		112233445566778899AABB10 /* FMRadioWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112233445566778899AABB0A; };
@@ -48,6 +49,7 @@
 		FA685967BAA69CB4A9C14425 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		DDDDEEEE0000000000000001 /* FMRadio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FMRadio.entitlements; sourceTree = "<group>"; };
 		112233445566778899AABB0E /* WidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetBridge.swift; sourceTree = "<group>"; };
+		C0AA00000000000000000001 /* CarPlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayController.swift; sourceTree = "<group>"; };
 		112233445566778899AABB0A /* FMRadioWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FMRadioWidget.swift; sourceTree = "<group>"; };
 		112233445566778899AABB0B /* WidgetShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetShared.swift; sourceTree = "<group>"; };
 		112233445566778899AABB0C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 				75955F20D14F7218718480F3,
 				B5EED8A2ED0BAE0359DC140A,
 				112233445566778899AABB0E,
+				C0AA00000000000000000001,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -233,6 +236,7 @@
 				09AA102FE3595BE00507B999,
 				CC17519DC9EA15D8D8A1F455,
 				C6A5AA1937C362EFE96D3E28,
+				C0AA00000000000000000002,
 				112233445566778899AABB13,
 				112233445566778899AABB12,
 			);
